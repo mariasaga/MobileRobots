@@ -84,4 +84,7 @@ function [forwBackVel, leftRightVel, rotVel, finish] = solution4(pts, contacts, 
         forwBackVel = speed_y;
         leftRightVel = speed_x;
     end
+    
+    finish = 0;
+
 end
