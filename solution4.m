@@ -29,10 +29,10 @@ function [forwBackVel, leftRightVel, rotVel, finish] = solution4(pts, contacts, 
     perp_limit = 1;
     orient_limit = 10;
 
-    % get the laser contact points in sensor's coordinates
+    % get the laser contact points in sensor coordinates
     points = [pts(1,contacts)' pts(2,contacts)'];
     
-    % calculate the distances
+    % calculate the squared distances
     distances = sum(points .^ 2, 2);
     
     % get the closest point
@@ -44,7 +44,7 @@ function [forwBackVel, leftRightVel, rotVel, finish] = solution4(pts, contacts, 
         leftRightVel = 0;
         rotVel = 0;
         
-        % switch state when the distance 'dist' is reaches
+        % switch state when the distance 'dist' is reached
         if min_value ^ 0.5 < dist
             state = 'move';
         end
