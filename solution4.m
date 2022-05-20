@@ -68,7 +68,7 @@ function [forwBackVel, leftRightVel, rotVel, finish] = solution4(pts, contacts, 
         end 
 
         % ensure that the robot only moves in one direction.
-        % replace < by > (or vice versa) to change direction bise
+        % replace < by > (or vice versa) to change direction bias
         % < makes the robot go right (+ve x)
         % > makes the robot go left (-ve x)
         speed_x = cos(phi) * vec(1) + sin(phi) * vec(2);
