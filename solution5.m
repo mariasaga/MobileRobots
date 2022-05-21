@@ -1,180 +1,227 @@
-%BUG2 Bug navigation class
-%
-% A concrete subclass of the Navigation class that implements the bug2 
-% navigation algorithm.  This is a simple automaton that performs local 
-% planning, that is, it can only sense the immediate presence of an obstacle.
-%
-% Methods::
-%   path        Compute a path from start to goal
-%   visualize    Display the obstacle map (deprecated)
-%   plot         Display the obstacle map
-%   display     Display state/parameters in human readable form
-%   char        Convert to string
-%
-% Example::
-%    load map1             % load the map
-%    bug = Bug2(map);      % create navigation object
-%    bug.goal = [50, 35];  % set the goal
-%    bug.path([20, 10]);   % animate path to (20,10)
-%
-% Reference::
-% -  Dynamic path planning for a mobile automaton with limited information on the environment,,
-%    V. Lumelsky and A. Stepanov, 
-%    IEEE Transactions on Automatic Control, vol. 31, pp. 1058-1063, Nov. 1986.
-% -  Robotics, Vision & Control, Sec 5.1.2,
-%    Peter Corke, Springer, 2011.
-%  
-% See also Navigation, DXform, Dstar, PRM.
+function [forwBackVel, leftRightVel, rotVel, finish] = solution5(pts, contacts, position, orientation, varargin)
 
-% Copyright (C) 1993-2011, by Peter I. Corke
-%
-% This file is part of The Robotics Toolbox for Matlab (RTB).
-% 
-% RTB is free software: you can redistribute it and/or modify
-% it under the terms of the GNU Lesser General Public License as published by
-% the Free Software Foundation, either version 3 of the License, or
-% (at your option) any later version.
-% 
-% RTB is distributed in the hope that it will be useful,
-% but WITHOUT ANY WARRANTY; without even the implied warranty of
-% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-% GNU Lesser General Public License for more details.
-% 
-% You should have received a copy of the GNU Leser General Public License
-% along with RTB.  If not, see <http://www.gnu.org/licenses/>.
-
-classdef Bug2 < Navigation
-
-    properties(Access=protected)
-        H       % hit points
-        j       % number of hit points
-        mline   % line from starting position to goal
-        step    % state, in step 1 or step 2 of algorithm
-        edge    % edge list
-        k       % edge index
+    % State Machine (FSM)
+    persistent state;
+    if isempty(state)
+        % the initial state of the FSM is 'init'
+        state = 'init';
     end
+   
+    % initialize function return variables
+    forwBackVel = 0;
+    leftRightVel = 0;
+    rotVel = 0;
+    finish = 0;
 
-    methods
+    if length(varargin) < 1
+        disp("Expected an input goal position");
+        finish = 1;
+        return;
+    else
+        d = varargin{1};
+        goal_x = d(1);
+        goal_y = d(2);
+    end
+    
+    % line characteristics
+    persistent m;               % gradient of line
+    persistent c;               % y-intercept of line
+    persistent dist_to_goal;    % distance to goal
+    persistent x_s;
+    persistent y_s;
+    persistent p_limit;
 
-        function bug = Bug2(world, goal)
-            %Bug2.Bug2 bug2 navigation object constructor
-            %
-            % B = Bug2(MAP) is a bug2 navigation
-            % object, and MAP is an occupancy grid, a representation of a
-            % planar world as a matrix whose elements are 0 (free space) or 1
-            % (occupied).
-            %
-            % Options::
-            % 'goal',G      Specify the goal point (1x2)
-            % 'inflate',K   Inflate all obstacles by K cells.
-            %
-            % See also Navigation.Navigation.
+    tolerance = 0.02;           % tolerance in m 
+    part_len = 0.01;
+    angle_tol = 3;              % angle tolerance in degrees
+    obj_detect_dist = 0.2;
 
-            % invoke the superclass constructor
-            bug = bug@Navigation(world);
+    % regulator constants for moving in a straight line
+    p_line = 3;
+    limit = 5;
 
-            bug.H = [];
-            bug.j = 1;
-            bug.step = 1;
+    % propotional gains for parallel, perpendicular, and rotational movements
+    p_parallel = 1.5;
+    p_perp = 2.0;
+    p_orientation = 5.5;
+
+    % absolute limits for the regulators
+    par_limit = 2;
+    perp_limit = 1;
+    orient_limit = 10;
+
+    % get the laser contact points in sensor coordinates
+    points = [pts(1,contacts)' pts(2,contacts)'];
+    
+    % calculate the squared distances
+    distances = sum(points .^ 2, 2);
+    
+    % get the closest point
+    [min_value, min_index] = min(distances);
+
+    % manage the states of FSM
+    if strcmp(state, 'init')
+        
+        % calculate line parameters
+        x0 = position(1);
+        y0 = position(2);
+
+        m = (goal_y - y0)/(goal_x - x0);
+        c = y0 - m * x0;
+
+        dist_to_goal = sqrt((goal_x - x0) ^ 2 + (goal_y - y0) ^ 2);
+
+        if abs(m) < 1
+            p_limit = [limit limit * m];
+        else
+            p_limit = [limit/m limit];
         end
 
-        % null planning for the bug!
-        function plan(bug, goal)
-            bug.goal = goal;
+        state = 'rotate_to_goal';
+
+    elseif strcmp(state, 'rotate_to_goal')
+
+        phi = orientation(3);
+        goal_orient = atan2(goal_x - position(1), position(2) - goal_y);
+        
+        if abs(phi - goal_orient) < angle_tol * pi/180
+            state = 'move_to_goal';
+        end
+        
+        % change orientation to one that is needed, if needed
+        error = goal_orient - phi;
+        rotVel = p_orientation * error;
+        if rotVel > orient_limit
+            rotVel = orient_limit;
+        elseif rotVel < -orient_limit
+            rotVel = -orient_limit;
         end
 
-        function navigate_init(bug, robot)
-
-            if isempty(bug.goal)
-                error('RTB:bug2:nogoal', 'no goal set, cant compute path');
+    elseif strcmp(state, 'move_to_goal')
+        
+        if abs(position(1) - goal_x) < tolerance && ...
+               abs(position(2) - goal_y) < tolerance
+            disp("Goal reached!")
+            finish = 1;
+            return;
+        end
+        
+        if min_value ^ 0.5 < obj_detect_dist
+            dist_to_goal = sqrt((goal_x - position(1)) ^ 2 + (goal_y - position(2)) ^ 2);
+            if dist_to_goal >= obj_detect_dist
+                state = 'avoid_obstacle';
             end
-            % parameters of the M-line, direct from initial position to goal
-            % as a vector mline, such that [robot 1]*mline = 0
-            dims = axis;
-            xmin = dims(1); xmax = dims(2);
-            ymin = dims(3); ymax = dims(4);
+        end
 
-            % create homogeneous representation of the line
-            %  line*[x y 1]' = 0
-            bug.mline = homline(robot(1), robot(2), ...
-                bug.goal(1), bug.goal(2));
-            bug.mline = bug.mline / norm(bug.mline(1:2));
-            if bug.mline(2) == 0
-                % handle the case that the line is vertical
-                plot([robot(1) robot(1)], [ymin ymax], 'k--');
+        % regulators for movement
+        u = zeros(1, 2);
+        goals = [goal_x goal_y];
+
+        for i = 1: 2
+            error = goals(i) - position(i);
+            u(i) = p_line * error;
+            if u(i) > p_limit(i)
+                u(i) = p_limit(i);
+            elseif u(i) < -p_limit(i)
+                u(i) = -p_limit(i);
+            end
+        end
+
+        % changing global velocities to local
+        phi = orientation(3);
+        speed_x = cos(phi) * u(1) + sin(phi) * u(2);
+        speed_y = -sin(phi) * u(1) + cos(phi) * u(2);
+
+        % setting speeds
+        forwBackVel = speed_y;
+        leftRightVel = speed_x;
+        rotVel = 0;
+
+    elseif strcmp(state, 'avoid_obstacle')
+
+
+        % if point on line
+        y_line = m * position(1) + c;
+        if abs(y_line - position(2)) < tolerance
+            disp("Point on line");
+
+            % if new distance to goal less than previously saved distance
+            dist = sqrt((goal_x - position(1)) ^ 2 + (goal_y - position(2)) ^ 2);
+            if dist <= dist_to_goal
+                state = 'rotate_to_goal';
+            end
+        end
+
+        % calculate vector with min distance in global coordinates
+        phi = orientation(3);
+        vec_wall = points(min_index, :);
+
+        % sensor coordinates to global
+        x = cos(phi) * vec_wall(1) - sin(phi) * vec_wall(2);
+        y = sin(phi) * vec_wall(1) + cos(phi) * vec_wall(2);
+        vec_wall = [x y];
+
+        % calculate perpendicular vector for regulator to maintain distance
+        if vec_wall(1) == 0 
+            vec = [1 0];
+        else
+            vec = [-vec_wall(2)/vec_wall(1) 1];
+            vec = vec/norm(vec);
+        end 
+
+        % ensure that the robot only moves in one direction.
+        % replace < by > (or vice versa) to change direction bias
+        % < makes the robot go right (+ve x)
+        % > makes the robot go left (-ve x)
+        speed_x = cos(phi) * vec(1) + sin(phi) * vec(2);
+        if speed_x > 0
+            vec = -vec;
+        end
+
+        % parallel regulator
+        v_para = p_parallel * vec;
+        v_para(v_para > par_limit) = par_limit;
+        v_para(v_para < -par_limit) = -par_limit;
+        
+        % perpendicular regulator
+        v_perp = (norm(vec_wall) - obj_detect_dist) * vec_wall/norm(vec_wall);
+        v_perp = p_perp * v_perp;
+        v_perp(v_perp > perp_limit) = perp_limit;
+        v_perp(v_perp < -perp_limit) = -perp_limit;
+        
+        % final global speed vector is an aggregate of the ouput of the
+        % parallel and perpendicular regulators
+        vec = v_para + v_perp;
+        
+        % orientation regulator
+        % calculation of desired orientation (phi)
+        goal_orient = atan2(vec_wall(1), -vec_wall(2));
+        
+        % avoid robot oscillation when goal orientation switches between 
+        % positive and negative values near pi (e.g. 7pi/8 -> -7pi/8)
+        if abs(goal_orient - phi) > pi
+            if goal_orient < 0
+                goal_orient = goal_orient + 2 * pi;
             else
-                x = [xmin xmax]';
-                y = -[x [1;1]] * [bug.mline(1); bug.mline(3)] / bug.mline(2);
-                plot(x, y, 'k--');
+                goal_orient = goal_orient - 2 * pi;
             end
         end
-        
-        % this should be a protected function, but can't make this callable
-        % from superclass when it's instantiation of an abstract method
-        % (R2010a).
-        
-        function n = next(bug, robot)
-            
-            n = [];
-            % these are coordinates (x,y)
-          
-            if bug.step == 1
-                % Step 1.  Move along the M-line toward the goal
 
-                if colnorm(bug.goal - robot) == 0 % are we there yet?
-                    return
-                end
+        % compute rotational velocity
+        rot = p_orientation * (goal_orient - phi);
+        if rot > orient_limit
+            rot = orient_limit;
+        elseif rot < -orient_limit
+            rot = -orient_limit;
+        end
+    
+        % global to local velocity conversion
+        speed_x = cos(phi) * vec(1) + sin(phi) * vec(2);
+        speed_y = -sin(phi) * vec(1) + cos(phi) * vec(2);
 
-                % motion on line toward goal
-                d = bug.goal-robot;
-                dx = sign(d(1));
-                dy = sign(d(2));
-
-                % detect if next step is an obstacle
-                if bug.occgrid(robot(2)+dy, robot(1)+dx)
-                    bug.message('(%d,%d) obstacle!', n);
-                    bug.H(bug.j,:) = robot; % define hit point
-                    bug.step = 2;
-                    % get a list of all the points around the obstacle
-                    bug.edge = edgelist(bug.occgrid==0, robot);
-                    bug.k = 2;  % skip the first edge point, we are already there
-                else
-                    n = robot + [dx; dy];
-                end
-            end % step 1
-
-            if bug.step == 2
-                % Step 2.  Move around the obstacle until we reach a point
-                % on the M-line closer than when we started.
-                if colnorm(bug.goal-robot) == 0 % are we there yet?
-                    return
-                end
-
-                if bug.k <= numrows(bug.edge)
-                    n = bug.edge(bug.k,:)';  % next edge point
-                else
-                    % we are at the end of the list of edge points, we
-                    % are back where we started.  Step 2.c test.
-                    error('robot is trapped')
-                    return;
-                end
-
-                % are we on the M-line now ?
-                if abs( [robot' 1]*bug.mline') <= 0.5
-                    bug.message('(%d,%d) moving along the M-line', n);
-                    % are closer than when we encountered the obstacle?
-                    if colnorm(robot-bug.goal) < colnorm(bug.H(bug.j,:)'-bug.goal)
-                        % back to moving along the M-line
-                        bug.j = bug.j + 1;
-                        bug.step = 1;
-                        return;
-                    end
-                end
-                % no, keep going around
-                bug.message('(%d,%d) keep moving around obstacle', n)
-                bug.k = bug.k+1;
-            end % step 2
-        end % next
-
-    end % methods
-end % classdef
+        % set function returns, the run is infite
+        forwBackVel = speed_y;
+        leftRightVel = speed_x;
+        rotVel = rot;
+    end
+end
