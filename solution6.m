@@ -37,11 +37,38 @@ function [forwBackVel, leftRightVel, rotVel, finish] = solution5(pts, contacts, 
 
         % get size of map
         [size_y, size_x] = size(map);
+        
+        % create a matrix where to work 
+        matrix = zeros(size_y, size_x);
+
+        % world initial positions
+        x_init = position(1);
+        y_init = position(2);
+
+        % units conversion from world to image
+        x_init_map=round( 100*((x_init-(-7.5))/(7.5-(-7.5))));
+        y_init_map=round( 200*((y_init-(-7.5))/(7.5-(-7.5))));
+
+        x_goal_map = round( 100*((goal_x-(-7.5))/(7.5-(-7.5))));
+        y_goal_map = round( 100*((goal_y-(-7.5))/(7.5-(-7.5))));
 
 
-        % units conversion from image to world
-        x_map=round( 100*((x_world-(-7.5))/(7.5-(-7.5))));
-        y_map=round( 200*((x_world-(-7.5))/(7.5-(-7.5))));
+        for i = 1: size_x
+            for j = 1: size_y
+                % if the cell is free
+                if map(j, i) == 255
+                    matrix(j,i) = 0;
+                % if the cell is occupied (obstacles)
+                elseif map(j,i) == 0
+                    matrix(j,i) = 1;
+                % if the cell is the goal cell put a 2
+                elseif i == x_goal_map && j == y_goal_map
+                    matrix(j,i) = 2;
+                end
+            end
+        end
+
+        
 
     elseif strcmp(state, 'move')
 
