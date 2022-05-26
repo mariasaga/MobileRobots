@@ -1,4 +1,8 @@
-map = imread('vrep_env/exercise02.png');
+
+str = 'vrep_env/exercise02';
+picture = strcat(str,'.png');
+
+map = imread(picture);
 
 imag = map;
 % figure();
