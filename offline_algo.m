@@ -49,13 +49,11 @@ while matrix(y_init_map, x_init_map) == 0
             for n = (i - 1): (i + 1)
                 try
                     if (matrix(m, n) == 1 || matrix(m, n) == findy || matrix(m, n)== findy - 1)
-                        % hello darkness my old friend
                     else
                         matrix(m, n) = findy + 1;
                     end
                 catch ME
                     if strcmp(ME.identifier, 'MATLAB:badsubscript')
-                        % hello darkness my old friend
                     else
                         throw(ME)
                     end
