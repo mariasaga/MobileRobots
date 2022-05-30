@@ -1,5 +1,11 @@
+% thicker walls
+% 4 neighbors 1st phase
+% 8 neighbors 2nd phase --> check all neighbors and choose the smallest one
 
-str = 'vrep_env/exercise02';
+
+
+
+str = 'exercise02';
 picture = strcat(str,'.png');
 
 map = imread(picture);
