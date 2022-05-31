@@ -1,8 +1,4 @@
-% thicker walls
-% 4 neighbors 1st phase
 % 8 neighbors 2nd phase --> check all neighbors and choose the smallest one
-
-
 
 
 str = 'exercise02';
@@ -36,7 +32,30 @@ map(map == 255) = 0;
 map(y_goal_map, x_goal_map) = 2;
 map(y_init_map, x_init_map) = 0;
 
-findy = 2;       % find value to change neighbor cell values
+
+% where we have 1 we thicken the wall
+[a, b] = ind2sub(size(map), find(map == 1));
+
+for k = 1: length(a)
+    j = a(k); 
+    i = b(k); 
+    for m = (j - 1): (j + 1)
+        for n = (i - 1): (i + 1)
+            try
+                % thicken the wall for the neighbors
+                map(m,n) = 1; 
+            catch ME
+                if strcmp(ME.identifier, 'MATLAB:badsubscript')
+                else
+                    throw(ME)
+                end
+            end
+        end  
+    end   
+end
+
+
+findy = 2;       % find value to change 4 neighbor cell values
 
 matrix = map;
 
@@ -52,23 +71,35 @@ while matrix(y_init_map, x_init_map) == 0
             continue
         end
         for m = (j - 1): (j + 1)
-            for n = (i - 1): (i + 1)
-                try
-                    if (matrix(m, n) == 1 || matrix(m, n) == findy || matrix(m, n)== findy - 1)
-                    else
-                        matrix(m, n) = findy + 1;
-                    end
-                catch ME
-                    if strcmp(ME.identifier, 'MATLAB:badsubscript')
-                    else
-                        throw(ME)
-                    end
+            try
+                if (matrix(m, i) == 1 || matrix(m, i) == findy || matrix(m, i)== findy - 1)
+                else
+                    matrix(m, i) = findy + 1;
                 end
-            end  
-        end   
+            catch ME
+                if strcmp(ME.identifier, 'MATLAB:badsubscript')
+                else
+                    throw(ME)
+                end
+            end
+        end
+        for n = (i-1): (i+1)
+            try 
+                if (matrix(j, n) == 1 || matrix(j, n) == findy || matrix(j, n)== findy - 1)
+                else
+                    matrix(j, n) = findy + 1;
+                end
+            catch ME
+                if strcmp(ME.identifier, 'MATLAB:badsubscript')
+                else
+                    throw(ME)
+                end
+            end
+        end
     end
     findy = findy + 1;
 end
+
 
 % Wavefront Planner - Phase 2
 
@@ -106,6 +137,7 @@ end
 
 
 % plotting
+figure;
 imagesc([0 size_x], [0 size_y], imag);
 
 hold on;
